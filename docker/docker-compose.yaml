@@ -1206,6 +1206,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+      minio-init:
+        condition: service_completed_successfully
     environment:
       NODE_ENV: production
       HTTP_PORT: "3000"

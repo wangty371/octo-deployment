@@ -884,6 +884,7 @@ Compose 的 `docs` profile **按需启用**：
 | `OCTO_DOCS_COLLAB_SECRET` | Hocuspocus collab token 的 JWT 签名密钥（≥32 字符） | `openssl rand -hex 32` |
 | `OCTO_DOCS_ATTACHMENT_SECRET` | 附件预签名 URL 的 HMAC 签名密钥（≥32 字符） | `openssl rand -hex 32` |
 | `OCTO_DOCS_COLLAB_WS_URL` | 浏览器可访问的 WebSocket URL，例如 `ws://10.201.0.101:28080/docs-ws/` | 手动填写 |
+| `OCTO_DOCS_SERVICE_URL` | octo-server 调用 docs REST API 的内部地址 | `http://octo-docs-backend:3000` |
 
 同时将 `OCTO_DOCS_WEB_ORIGIN`、`OCTO_DOCS_S3_ENDPOINT`、`OCTO_DOCS_CORS_ORIGINS`
 设置为与你的部署 URL 一致。详见 `.env.example`。

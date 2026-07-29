@@ -1250,6 +1250,7 @@ Before adding `docs` to `COMPOSE_PROFILES`, set the four required secrets in
 | `OCTO_DOCS_COLLAB_SECRET` | JWT signing secret for Hocuspocus collab tokens (≥32 chars) | `openssl rand -hex 32` |
 | `OCTO_DOCS_ATTACHMENT_SECRET` | HMAC signing secret for attachment presigned URLs (≥32 chars) | `openssl rand -hex 32` |
 | `OCTO_DOCS_COLLAB_WS_URL` | Browser-reachable WebSocket URL, e.g. `ws://10.201.0.101:28080/docs-ws/` | set manually |
+| `OCTO_DOCS_SERVICE_URL` | Internal URL octo-server uses to call docs REST API | `http://octo-docs-backend:3000` |
 
 Also set `OCTO_DOCS_WEB_ORIGIN`, `OCTO_DOCS_S3_ENDPOINT`, and
 `OCTO_DOCS_CORS_ORIGINS` to match your deployment URL. See `.env.example` for
