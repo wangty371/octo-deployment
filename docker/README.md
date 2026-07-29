@@ -1241,7 +1241,7 @@ real-time sync) — is **opt-in** behind the Docker Compose `docs` profile:
 
 ### Prerequisites
 
-Before adding `docs` to `COMPOSE_PROFILES`, set the four required secrets in
+Before adding `docs` to `COMPOSE_PROFILES`, set the required docs settings in
 `docker/.env`:
 
 | Variable | Purpose | Generate with |
@@ -1250,7 +1250,6 @@ Before adding `docs` to `COMPOSE_PROFILES`, set the four required secrets in
 | `OCTO_DOCS_COLLAB_SECRET` | JWT signing secret for Hocuspocus collab tokens (≥32 chars) | `openssl rand -hex 32` |
 | `OCTO_DOCS_ATTACHMENT_SECRET` | HMAC signing secret for attachment presigned URLs (≥32 chars) | `openssl rand -hex 32` |
 | `OCTO_DOCS_COLLAB_WS_URL` | Browser-reachable WebSocket URL, e.g. `ws://10.201.0.101:28080/docs-ws/` | set manually |
-| `OCTO_DOCS_SERVICE_URL` | Internal URL octo-server uses to call docs REST API | `http://octo-docs-backend:3000` |
 
 Also set `OCTO_DOCS_WEB_ORIGIN`, `OCTO_DOCS_S3_ENDPOINT`, and
 `OCTO_DOCS_CORS_ORIGINS` to match your deployment URL. See `.env.example` for
@@ -1263,7 +1262,11 @@ cd docker
 # Add "docs" to the existing COMPOSE_PROFILES (guard against double-append)
 existing="$(grep -E '^COMPOSE_PROFILES=' .env | tail -1 | cut -d= -f2-)"
 if ! echo "$existing" | grep -qw "docs"; then
-  sed -i "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=${existing:+$existing,}docs|" .env
+  if [ -n "$existing" ]; then
+    sed -i "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=${existing},docs|" .env
+  else
+    echo "COMPOSE_PROFILES=docs" >> .env
+  fi
 fi
 
 docker compose --profile docs up -d octo-docs-backend
@@ -1280,9 +1283,9 @@ manually against the live MySQL container. Set `OCTO_DOCS_DB_PASSWORD` in
 `.env` first, then run:
 
 ```bash
-DOCS_PASS="$(grep -E '^OCTO_DOCS_DB_PASSWORD=' docker/.env | cut -d= -f2-)"
-docker exec -i octo-mysql-1 \
-  mysql -uroot -p"$(grep -E '^MYSQL_ROOT_PASSWORD=' docker/.env | cut -d= -f2-)" <<SQL
+DOCS_PASS="$(grep -E '^OCTO_DOCS_DB_PASSWORD=' .env | cut -d= -f2-)"
+docker compose exec -T mysql \
+  mysql -uroot -p"$(grep -E '^MYSQL_ROOT_PASSWORD=' .env | cut -d= -f2-)" <<SQL
 CREATE DATABASE IF NOT EXISTS octo_docs CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 CREATE USER IF NOT EXISTS 'docs'@'%' IDENTIFIED BY '${DOCS_PASS}';
 ALTER USER IF EXISTS      'docs'@'%' IDENTIFIED BY '${DOCS_PASS}';
@@ -1308,8 +1311,8 @@ The docs module is gated by a `system_setting` row. Insert it once after
 `octo-server` is running:
 
 ```bash
-docker exec -i octo-mysql-1 \
-  mysql -uroot -p"$(grep MYSQL_ROOT_PASSWORD docker/.env | cut -d= -f2-)" octo <<'SQL'
+docker compose exec -T mysql \
+  mysql -uroot -p"$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2-)" octo <<'SQL'
 INSERT INTO system_setting (category, key_name, value, value_type, description)
 VALUES ('docs', 'enabled', '1', 'bool', 'Enable docs module in octo-web')
 ON DUPLICATE KEY UPDATE value = '1';

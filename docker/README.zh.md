@@ -876,7 +876,7 @@ Compose 的 `docs` profile **按需启用**：
 
 ### 前置条件
 
-在将 `docs` 加入 `COMPOSE_PROFILES` 之前，先在 `docker/.env` 中设置四个必填密钥：
+在将 `docs` 加入 `COMPOSE_PROFILES` 之前，先在 `docker/.env` 中设置必填的 docs 配置：
 
 | 变量 | 用途 | 生成方式 |
 |---|---|---|
@@ -884,7 +884,6 @@ Compose 的 `docs` profile **按需启用**：
 | `OCTO_DOCS_COLLAB_SECRET` | Hocuspocus collab token 的 JWT 签名密钥（≥32 字符） | `openssl rand -hex 32` |
 | `OCTO_DOCS_ATTACHMENT_SECRET` | 附件预签名 URL 的 HMAC 签名密钥（≥32 字符） | `openssl rand -hex 32` |
 | `OCTO_DOCS_COLLAB_WS_URL` | 浏览器可访问的 WebSocket URL，例如 `ws://10.201.0.101:28080/docs-ws/` | 手动填写 |
-| `OCTO_DOCS_SERVICE_URL` | octo-server 调用 docs REST API 的内部地址 | `http://octo-docs-backend:3000` |
 
 同时将 `OCTO_DOCS_WEB_ORIGIN`、`OCTO_DOCS_S3_ENDPOINT`、`OCTO_DOCS_CORS_ORIGINS`
 设置为与你的部署 URL 一致。详见 `.env.example`。
@@ -896,7 +895,11 @@ cd docker
 # 将 "docs" 并入已有的 COMPOSE_PROFILES（防止重复追加）
 existing="$(grep -E '^COMPOSE_PROFILES=' .env | tail -1 | cut -d= -f2-)"
 if ! echo "$existing" | grep -qw "docs"; then
-  sed -i "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=${existing:+$existing,}docs|" .env
+  if [ -n "$existing" ]; then
+    sed -i "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=${existing},docs|" .env
+  else
+    echo "COMPOSE_PROFILES=docs" >> .env
+  fi
 fi
 
 docker compose --profile docs up -d octo-docs-backend
@@ -912,9 +915,9 @@ docker compose up -d --force-recreate nginx
 中设好 `OCTO_DOCS_DB_PASSWORD`，然后运行：
 
 ```bash
-DOCS_PASS="$(grep -E '^OCTO_DOCS_DB_PASSWORD=' docker/.env | cut -d= -f2-)"
-docker exec -i octo-mysql-1 \
-  mysql -uroot -p"$(grep -E '^MYSQL_ROOT_PASSWORD=' docker/.env | cut -d= -f2-)" <<SQL
+DOCS_PASS="$(grep -E '^OCTO_DOCS_DB_PASSWORD=' .env | cut -d= -f2-)"
+docker compose exec -T mysql \
+  mysql -uroot -p"$(grep -E '^MYSQL_ROOT_PASSWORD=' .env | cut -d= -f2-)" <<SQL
 CREATE DATABASE IF NOT EXISTS octo_docs CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 CREATE USER IF NOT EXISTS 'docs'@'%' IDENTIFIED BY '${DOCS_PASS}';
 ALTER USER IF EXISTS      'docs'@'%' IDENTIFIED BY '${DOCS_PASS}';
@@ -937,8 +940,8 @@ docker compose up --force-recreate minio-init
 文档模块受 `system_setting` 表控制。`octo-server` 启动后执行一次：
 
 ```bash
-docker exec -i octo-mysql-1 \
-  mysql -uroot -p"$(grep MYSQL_ROOT_PASSWORD docker/.env | cut -d= -f2-)" octo <<'SQL'
+docker compose exec -T mysql \
+  mysql -uroot -p"$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2-)" octo <<'SQL'
 INSERT INTO system_setting (category, key_name, value, value_type, description)
 VALUES ('docs', 'enabled', '1', 'bool', 'Enable docs module in octo-web')
 ON DUPLICATE KEY UPDATE value = '1';
