@@ -422,7 +422,7 @@ services:
         # CreateBucket privileges (the policy below intentionally omits
         # bucket admin actions). Each `mb` is `--ignore-existing` so the
         # service stays idempotent.
-        for b in file chat moment sticker report chatbg common download group avatar octo-docs-attachments; do
+        for b in file chat moment sticker report chatbg common download group avatar octo-docs-attachments octo-marketplace; do
           mc mb --ignore-existing "local/$$b" >/dev/null
         done
 
@@ -448,7 +448,7 @@ services:
         # Earlier `|| true` silently swallowed permission bugs and API
         # drift — operator saw `minio-init` exit 0 but preview still 403.
         echo "[minio-init] setting anonymous download on content buckets…"
-        for b in chat file moment sticker chatbg common avatar; do
+        for b in chat file moment sticker chatbg common avatar octo-marketplace; do
           attempt=1
           until mc anonymous set download "local/$$b" >/dev/null 2>&1; do
             if [ "$$attempt" -ge 3 ]; then
@@ -897,6 +897,12 @@ services:
     environment:
       API_URL: http://octo-server:8090
       SUMMARY_API_URL: ${OCTO_SUMMARY_API_URL:-http://summary-api:8080}
+      # Marketplace integration: octo-web's built-in nginx proxies
+      # /market/api/v1/ → octo-marketplace:8092 when MARKET_API_URL is set.
+      # Set this only when the `market` profile is active; leave empty to
+      # disable the feature gracefully (octo-web returns 503 for market API
+      # calls, which is the expected "feature not configured" path).
+      MARKET_API_URL: ${OCTO_MARKET_API_URL:-}
     ports:
       # Web SPA is reached through nginx (`/`, see octo.conf.template) by
       # default — keep the direct host port loopback-only so an operator
@@ -1300,6 +1306,84 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+    networks:
+      - octo-net
+
+  # ===========================================================================
+  # Marketplace: octo-marketplace (Skill & MCP market) — opt-in profile
+  # ===========================================================================
+  # Gated behind `profiles: ["market"]` — a vanilla `docker compose up -d`
+  # starts nothing. Opt in with `COMPOSE_PROFILES=market` (combine with other
+  # profiles: `COMPOSE_PROFILES=docs,market`).
+  #
+  # The marketplace provides the Skill archive upload/download and MCP server
+  # icon management backend, accessible through the octo-web sidebar ("工具").
+  #
+  # ISOLATION GUARANTEES:
+  #   - No core service definition is touched beyond MARKET_API_URL on web
+  #     (empty by default; octo-web returns 503 gracefully when unset).
+  #   - Reuses the existing octo-net network, MySQL instance (octo_marketplace
+  #     database created by init-extra-dbs.sh), and MinIO instance.
+  #   - nginx routes /market/api/v1/ and /mcp-market are always present in
+  #     the nginx config (variable proxy_pass defers DNS so nginx starts
+  #     cleanly even when the marketplace container is absent).
+  #
+  # HTTP PRESIGNED URL NOTE:
+  #   Skill archive uploads use MinIO presigned PUT URLs. When the deployment
+  #   serves octo-web over plain HTTP (not HTTPS), the octo-web frontend
+  #   validates that the presigned URL's hostname matches the current page
+  #   origin (window.location.hostname). This works correctly for HTTPS
+  #   deployments. For HTTP deployments on a LAN IP, a fix has been submitted
+  #   to octo-web (PR: fix/skill-market-http-same-origin). Until that PR is
+  #   merged and a new image is released, HTTP LAN deployments need to patch
+  #   the octo-web JS bundle manually — see the PR description for details.
+  # ---------------------------------------------------------------------------
+  octo-marketplace:
+    image: ${OCTO_MARKETPLACE_IMAGE:-mininglamposs/octo-marketplace:latest}
+    restart: unless-stopped
+    profiles: ["market"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      API_PORT: "8092"
+      # MySQL — scoped account provisioned by init-extra-dbs.sh
+      MYSQL_DSN: "marketplace:${OCTO_MARKETPLACE_DB_PASSWORD:-}@tcp(mysql:3306)/octo_marketplace?charset=utf8mb4&parseTime=true"
+      # Public base URL: the full origin the browser uses to reach this stack.
+      # Used to build presigned download links for skill archives and MCP icons.
+      # Must be the same origin the browser navigates to (e.g. https://octo.example.com).
+      PUBLIC_BASE_URL: "${OCTO_PUBLIC_BASE_URL:-http://${OCTO_DOMAIN:-localhost}:${OCTO_HTTP_PORT:-28080}}"
+      CORS_ALLOWED_ORIGINS: "${OCTO_PUBLIC_BASE_URL:-http://${OCTO_DOMAIN:-localhost}:${OCTO_HTTP_PORT:-28080}}"
+      OCTO_API_URL: "http://octo-server:8090"
+      AUTH_ENABLED: "true"
+      # Skill archive storage (MinIO, path-style).
+      # OSS_ENDPOINT is the INTERNAL MinIO address used for presigning;
+      # OSS_PUBLIC_ENDPOINT is the browser-reachable URL baked into the links.
+      STORAGE_DRIVER: oss
+      OSS_ENDPOINT: "http://minio:9000"
+      OSS_BUCKET: octo-marketplace
+      OSS_ACCESS_KEY: ${OCTO_MINIO_APP_USER:-octo-app}
+      OSS_SECRET_KEY: ${OCTO_MINIO_APP_PASSWORD:-}
+      OSS_PATH_STYLE: "true"
+      OSS_PUBLIC_ENDPOINT: "${OCTO_PUBLIC_BASE_URL:-http://${OCTO_DOMAIN:-localhost}:${OCTO_HTTP_PORT:-28080}}"
+      OSS_PUBLIC_PATH_STYLE: "true"
+      OSS_DOWNLOAD_SIGNED: "false"
+      # MCP icon storage (same MinIO instance, same bucket)
+      STORAGE_ENDPOINT: "http://minio:9000"
+      STORAGE_BUCKET: octo-marketplace
+      STORAGE_ACCESS_KEY: ${OCTO_MINIO_APP_USER:-octo-app}
+      STORAGE_SECRET_KEY: ${OCTO_MINIO_APP_PASSWORD:-}
+      STORAGE_PUBLIC_BASE_URL: "${OCTO_PUBLIC_BASE_URL:-http://${OCTO_DOMAIN:-localhost}:${OCTO_HTTP_PORT:-28080}}"
+      STORAGE_PATH_STYLE: "true"
+      TZ: ${TZ:-UTC}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8092/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - octo-net
 

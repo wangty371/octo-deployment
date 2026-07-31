@@ -146,6 +146,7 @@ CREATE DATABASE IF NOT EXISTS octo_matter  CHARACTER SET utf8mb4 COLLATE utf8mb4
 CREATE DATABASE IF NOT EXISTS octo_summary CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 CREATE DATABASE IF NOT EXISTS octo_speech  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 CREATE DATABASE IF NOT EXISTS octo_docs    CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+CREATE DATABASE IF NOT EXISTS octo_marketplace CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 
 -- Service-scoped read-write accounts -----------------------------------------
 -- CREATE USER IF NOT EXISTS leaves an existing user untouched; the matching
@@ -199,4 +200,18 @@ SQL
   echo "[init-extra-dbs] provisioned docs DB user"
 fi
 
-echo "[init-extra-dbs] created octo_matter + octo_summary + octo_speech + octo_docs + service users (scoped to \`${MYSQL_DATABASE}\`)"
+echo "[init-extra-dbs] created octo_matter + octo_summary + octo_speech + octo_docs + octo_marketplace + service users (scoped to \`${MYSQL_DATABASE}\`)"
+
+# If OCTO_MARKETPLACE_DB_PASSWORD is set, provision the scoped marketplace DB
+# user. The main SQL block above already created octo_marketplace; this
+# separate step is conditional so it is safe to skip on a non-market deployment.
+if [ -n "${OCTO_MARKETPLACE_DB_PASSWORD:-}" ]; then
+  validate_password OCTO_MARKETPLACE_DB_PASSWORD "$OCTO_MARKETPLACE_DB_PASSWORD"
+  MYSQL_PWD="${MYSQL_ROOT_PASSWORD}" mysql -u root <<SQL
+CREATE USER IF NOT EXISTS 'marketplace'@'%' IDENTIFIED BY '${OCTO_MARKETPLACE_DB_PASSWORD}';
+ALTER USER IF EXISTS      'marketplace'@'%' IDENTIFIED BY '${OCTO_MARKETPLACE_DB_PASSWORD}';
+GRANT ALL PRIVILEGES ON octo_marketplace.* TO 'marketplace'@'%';
+FLUSH PRIVILEGES;
+SQL
+  echo "[init-extra-dbs] provisioned marketplace DB user"
+fi

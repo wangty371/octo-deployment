@@ -311,6 +311,41 @@ server {
         proxy_send_timeout 86400s;
     }
 
+    # ---------------------------------------------------------------------------
+    # Marketplace: octo-marketplace REST API + SPA routes
+    # ---------------------------------------------------------------------------
+    # Variable proxy_pass + Docker DNS resolver defers DNS lookup to request
+    # time so nginx starts cleanly even when the `market` profile is inactive
+    # (returns 502 instead of crashing with "host not found in upstream").
+    location = /market/api {
+        return 301 /market/api/v1/;
+    }
+    location /market/api/v1/ {
+        limit_req zone=octo_api burst=20 nodelay;
+        set $upstream_market octo-marketplace;
+        resolver 127.0.0.11 ipv6=off valid=30s;
+        rewrite ^/market/api/v1/(.*)$ /api/v1/$1 break;
+        proxy_pass         http://$upstream_market:8092;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        client_max_body_size 100m;
+    }
+
+    # SPA history-mode fallback for marketplace pages (/mcp-market, /mcp-market/*)
+    location /mcp-market {
+        set $upstream_web_market web;
+        rewrite ^ / break;
+        proxy_pass         http://$upstream_web_market;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+    }
+
     location = /_octo_up {
         default_type text/html;
         return 200 '<!doctype html>
@@ -325,6 +360,7 @@ server {
 <li><a href="/matter/health">Matter · <code>/matter/health</code></a></li>
 <li><a href="/summary/health">Smart-summary · <code>/summary/health</code></a></li>
 <li><a href="/docs-api/healthz">Docs · <code>/docs-api/healthz</code></a></li>
+<li><a href="/market/api/v1/healthz">Marketplace · <code>/market/api/v1/healthz</code></a></li>
 </ul>
 <p>MinIO console is loopback-only (port 29001 on the host). SSH-forward
 to reach it (<code>ssh -L 9001:127.0.0.1:29001 user@host</code>).</p>
@@ -353,7 +389,7 @@ to reach it (<code>ssh -L 28088:127.0.0.1:28088 user@host</code>).</p>
     # trailing slash) must fall through to the `location /` SPA
     # catch-all instead of being routed at MinIO — otherwise an SPA
     # refresh on `/chat/` would render MinIO's 404 XML.
-    location ~ ^/(file|chat|moment|sticker|report|chatbg|common|download|group|avatar|octo-docs-attachments)/.+ {
+    location ~ ^/(file|chat|moment|sticker|report|chatbg|common|download|group|avatar|octo-docs-attachments|octo-marketplace)/.+ {
         proxy_pass         http://octo_minio_api;
         proxy_http_version 1.1;
         proxy_set_header   Host              $http_host;
@@ -562,7 +598,7 @@ to reach it (<code>ssh -L 28088:127.0.0.1:28088 user@host</code>).</p>
 #     # `/chat/` must fall through to `location /`). Whitelist must stay
 #     # in sync with the `minio-init` `for b in …` list. Must precede
 #     # `location /`.
-#     location ~ ^/(file|chat|moment|sticker|report|chatbg|common|download|group|avatar|octo-docs-attachments)/.+ {
+#     location ~ ^/(file|chat|moment|sticker|report|chatbg|common|download|group|avatar|octo-docs-attachments|octo-marketplace)/.+ {
 #         proxy_pass         http://octo_minio_api;
 #         proxy_http_version 1.1;
 #         proxy_set_header   Host              $http_host;
