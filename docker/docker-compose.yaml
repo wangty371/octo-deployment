@@ -1258,6 +1258,16 @@ services:
         condition: service_started
       minio-init:
         condition: service_completed_successfully
+    # Run pending schema migrations before starting the API server. The image
+    # ships incremental SQL files under /app/migrations/upgrades/ and a
+    # `node dist/db/migrate.js` runner that applies them with an advisory lock
+    # and a schema_migrations ledger. MySQL DDL auto-commits, so migrations
+    # cannot be wrapped in one transaction; the runner treats every upgrade
+    # file as idempotent (guarded DDL / predicated DML) and records each run
+    # in the ledger — re-executing on every container start is therefore safe
+    # and required for in-place image upgrades to pick up new schema changes.
+    command: >
+      sh -c "node dist/db/migrate.js && exec node dist/index.js"
     environment:
       NODE_ENV: production
       HTTP_PORT: "3000"
