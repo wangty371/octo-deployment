@@ -926,7 +926,13 @@ FLUSH PRIVILEGES;
 SQL
 ```
 
-`octo-docs-backend` 启动时会自行运行 schema migration——无需手动导入 SQL。
+`octo-docs-backend` 通过挂载的 `docker/scripts/docs-migrate-entrypoint.sh`
+在每次启动时自动完成两个幂等步骤，无需手动导入 SQL：
+
+1. **基础 schema 导入** — 当 `doc_meta` 表不存在时（即全新的 `octo_docs` 库），
+   自动导入 `migrations/schema.sql`。重复执行无副作用。
+2. **增量迁移** — 执行 `dist/db/migrate.js`，通过 advisory lock + `schema_migrations`
+   账本应用 `migrations/upgrades/` 下的待执行迁移文件，已执行的自动跳过。
 
 `octo-docs-attachments` MinIO bucket 由 `minio-init` 在 `OCTO_DOCS_DB_PASSWORD`
 非空时自动创建。若 `minio-init` 已在你添加 docs 之前运行过，重跑一次即可：

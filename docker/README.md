@@ -1294,8 +1294,17 @@ FLUSH PRIVILEGES;
 SQL
 ```
 
-`octo-docs-backend` runs its own schema migrations on boot — no manual SQL
-import is needed beyond the above.
+`octo-docs-backend` automatically applies schema migrations on every startup
+via `docker/scripts/docs-migrate-entrypoint.sh` (mounted read-only into the
+container). The script runs two idempotent phases before starting the API server:
+
+1. **Base schema bootstrap** — imports `migrations/schema.sql` when `doc_meta`
+   is absent (i.e. on a fresh `octo_docs` database). Re-runs are a no-op.
+2. **Incremental upgrades** — runs `dist/db/migrate.js`, which applies any
+   pending files under `migrations/upgrades/` with an advisory lock and a
+   `schema_migrations` ledger. Already-applied files are skipped.
+
+No manual SQL import is needed.
 
 The `octo-docs-attachments` MinIO bucket is created automatically by
 `minio-init` when `OCTO_DOCS_DB_PASSWORD` is non-empty. If `minio-init`
@@ -1331,6 +1340,23 @@ curl http://127.0.0.1:28080/docs-api/healthz
 # Service status
 docker compose ps octo-docs-backend
 ```
+
+If `octo-docs-backend` is in a restart loop, the migration entrypoint failed.
+Check the logs:
+
+```bash
+docker compose logs octo-docs-backend | grep '\[docs-init\]\|\[migrate\]'
+```
+
+Common causes:
+- **`[docs-init] FATAL`** — MySQL connection failed or `schema.sql` import
+  error. Verify `OCTO_DOCS_DB_PASSWORD` is set correctly in `.env`.
+- **`[migrate] failed`** — an upgrade SQL file hit a database error. The
+  advisory lock is released on exit, so a retry after fixing the root cause
+  is safe (already-applied files are skipped by the ledger).
+- **`Cannot find module '/app/dist/db/migrate.js'`** — the image is older than
+  `0.3.0`, which predates the migration runner. Set
+  `OCTO_DOCS_IMAGE=mininglamposs/octo-docs-backend:0.4.0` in `.env`.
 
 ---
 

@@ -1246,7 +1246,7 @@ services:
       - octo-net
 
   octo-docs-backend:
-    image: ${OCTO_DOCS_IMAGE:-mininglamposs/octo-docs-backend:latest}
+    image: ${OCTO_DOCS_IMAGE:-mininglamposs/octo-docs-backend:0.4.0}
     restart: unless-stopped
     profiles: ["docs"]
     depends_on:
@@ -1258,16 +1258,14 @@ services:
         condition: service_started
       minio-init:
         condition: service_completed_successfully
-    # Run pending schema migrations before starting the API server. The image
-    # ships incremental SQL files under /app/migrations/upgrades/ and a
-    # `node dist/db/migrate.js` runner that applies them with an advisory lock
-    # and a schema_migrations ledger. MySQL DDL auto-commits, so migrations
-    # cannot be wrapped in one transaction; the runner treats every upgrade
-    # file as idempotent (guarded DDL / predicated DML) and records each run
-    # in the ledger — re-executing on every container start is therefore safe
-    # and required for in-place image upgrades to pick up new schema changes.
-    command: >
-      sh -c "node dist/db/migrate.js && exec node dist/index.js"
+    # docs-migrate-entrypoint.sh (mounted below) handles three phases:
+    #   1. Base schema bootstrap — imports schema.sql when doc_meta is absent
+    #      (init-extra-dbs.sh creates an empty octo_docs; schema.sql populates it)
+    #   2. Incremental upgrades — runs dist/db/migrate.js (advisory lock +
+    #      schema_migrations ledger; idempotent on every restart)
+    #   3. exec the API server — replaces shell so SIGTERM reaches Node directly
+    # MINIMUM IMAGE VERSION: >= 0.3.0 (ships dist/db/migrate.js + upgrades/).
+    # Default tag is pinned to 0.4.0; override with OCTO_DOCS_IMAGE.
     environment:
       NODE_ENV: production
       HTTP_PORT: "3000"
@@ -1304,12 +1302,18 @@ services:
       # CORS — allow requests from the web frontend
       CORS_ALLOWED_ORIGINS: "${OCTO_DOCS_CORS_ORIGINS:-}"
       TZ: ${TZ:-UTC}
+    # Mount the entrypoint script that bootstraps the base schema on first run
+    # and then applies incremental upgrade migrations before starting the server.
+    # Read-only mount — the script is a plain shell file with no secrets.
+    volumes:
+      - ./scripts/docs-migrate-entrypoint.sh:/usr/local/bin/docs-migrate-entrypoint.sh:ro
+    command: sh /usr/local/bin/docs-migrate-entrypoint.sh
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3000/healthz || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 60s
     networks:
       - octo-net
 
