@@ -317,6 +317,14 @@ server {
     # Variable proxy_pass + Docker DNS resolver defers DNS lookup to request
     # time so nginx starts cleanly even when the `market` profile is inactive
     # (returns 502 instead of crashing with "host not found in upstream").
+    location = /market/healthz {
+        set $upstream_market_hc octo-marketplace;
+        resolver 127.0.0.11 ipv6=off valid=30s;
+        proxy_pass         http://$upstream_market_hc:8092/healthz;
+        proxy_http_version 1.1;
+        proxy_set_header   Host $host;
+        access_log off;
+    }
     location = /market/api {
         return 301 /market/api/v1/;
     }
@@ -360,7 +368,7 @@ server {
 <li><a href="/matter/health">Matter · <code>/matter/health</code></a></li>
 <li><a href="/summary/health">Smart-summary · <code>/summary/health</code></a></li>
 <li><a href="/docs-api/healthz">Docs · <code>/docs-api/healthz</code></a></li>
-<li><a href="/market/api/v1/healthz">Marketplace · <code>/market/api/v1/healthz</code></a></li>
+<li><a href="/market/healthz">Marketplace · <code>/market/healthz</code></a></li>
 </ul>
 <p>MinIO console is loopback-only (port 29001 on the host). SSH-forward
 to reach it (<code>ssh -L 9001:127.0.0.1:29001 user@host</code>).</p>

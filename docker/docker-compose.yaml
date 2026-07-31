@@ -196,6 +196,7 @@ services:
       OCTO_SUMMARY_READER_PASSWORD: ${OCTO_SUMMARY_READER_PASSWORD:-summary_reader}
       SPEECH_DB_PASSWORD: ${SPEECH_DB_PASSWORD:-}
       OCTO_DOCS_DB_PASSWORD: ${OCTO_DOCS_DB_PASSWORD:-}
+      OCTO_MARKETPLACE_DB_PASSWORD: ${OCTO_MARKETPLACE_DB_PASSWORD:-}
     # Backing service: bound to loopback by default so a missed-config moment
     # does not expose MySQL with the placeholder root password to the public
     # internet. Override OCTO_MYSQL_BIND to 0.0.0.0 only when you understand
@@ -1312,6 +1313,55 @@ services:
   # ===========================================================================
   # Marketplace: octo-marketplace (Skill & MCP market) — opt-in profile
   # ===========================================================================
+  # ---------------------------------------------------------------------------
+  # market-preflight: validate required secrets + provision DB on existing vols
+  # ---------------------------------------------------------------------------
+  # Runs before octo-marketplace starts. Two responsibilities:
+  #   1. Fail-fast: OCTO_MARKETPLACE_DB_PASSWORD must be set and non-trivial.
+  #   2. DB provisioning: on an existing mysql-data volume (i.e. when the
+  #      market profile is added to a running stack), init-extra-dbs.sh will
+  #      not re-run (it fires only on first MySQL volume init). This service
+  #      creates octo_marketplace + the marketplace user idempotently via the
+  #      root account, matching what init-extra-dbs.sh would have done on a
+  #      fresh install. On a brand-new install, init-extra-dbs.sh already
+  #      created the DB and user, so the IF NOT EXISTS / IF EXISTS guards make
+  #      re-execution a safe no-op.
+  market-preflight:
+    image: ${OCTO_PREFLIGHT_IMAGE:-busybox:1.36}
+    restart: "no"
+    profiles: ["market"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      OCTO_MARKETPLACE_DB_PASSWORD: ${OCTO_MARKETPLACE_DB_PASSWORD:-}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        # Validate OCTO_MARKETPLACE_DB_PASSWORD
+        if [ -z "$$OCTO_MARKETPLACE_DB_PASSWORD" ]; then
+          echo "[market-preflight] FATAL: OCTO_MARKETPLACE_DB_PASSWORD is empty — set it in .env (openssl rand -hex 16)" >&2
+          exit 1
+        fi
+        lc=$$(printf %s "$$OCTO_MARKETPLACE_DB_PASSWORD" | tr 'A-Z' 'a-z')
+        case "$$lc" in
+          change_me_*|chg_me*)
+            echo "[market-preflight] FATAL: OCTO_MARKETPLACE_DB_PASSWORD is still a placeholder" >&2
+            exit 1
+            ;;
+        esac
+        # Idempotently provision DB + user (safe on both fresh and existing volumes)
+        MYSQL_PWD="$$MYSQL_ROOT_PASSWORD" mysql -h mysql -u root \
+          -e "CREATE DATABASE IF NOT EXISTS octo_marketplace CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+              CREATE USER IF NOT EXISTS 'marketplace'@'%' IDENTIFIED BY '${OCTO_MARKETPLACE_DB_PASSWORD}';
+              ALTER USER IF EXISTS 'marketplace'@'%' IDENTIFIED BY '${OCTO_MARKETPLACE_DB_PASSWORD}';
+              GRANT ALL PRIVILEGES ON octo_marketplace.* TO 'marketplace'@'%';
+              FLUSH PRIVILEGES;"
+        echo "[market-preflight] octo_marketplace database and user ready"
+    networks:
+      - octo-net
   # Gated behind `profiles: ["market"]` — a vanilla `docker compose up -d`
   # starts nothing. Opt in with `COMPOSE_PROFILES=market` (combine with other
   # profiles: `COMPOSE_PROFILES=docs,market`).
@@ -1343,6 +1393,8 @@ services:
     restart: unless-stopped
     profiles: ["market"]
     depends_on:
+      market-preflight:
+        condition: service_completed_successfully
       mysql:
         condition: service_healthy
       minio-init:
