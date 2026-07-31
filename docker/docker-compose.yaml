@@ -449,7 +449,7 @@ services:
         # Earlier `|| true` silently swallowed permission bugs and API
         # drift — operator saw `minio-init` exit 0 but preview still 403.
         echo "[minio-init] setting anonymous download on content buckets…"
-        for b in chat file moment sticker chatbg common avatar octo-marketplace; do
+        for b in chat file moment sticker chatbg common avatar; do
           attempt=1
           until mc anonymous set download "local/$$b" >/dev/null 2>&1; do
             if [ "$$attempt" -ge 3 ]; then
@@ -901,8 +901,8 @@ services:
       # Marketplace integration: octo-web's built-in nginx proxies
       # /market/api/v1/ → octo-marketplace:8092 when MARKET_API_URL is set.
       # Set this only when the `market` profile is active; leave empty to
-      # disable the feature gracefully (octo-web returns 503 for market API
-      # calls, which is the expected "feature not configured" path).
+      # disable the feature (the outer nginx returns 502 when the marketplace
+      # container is absent; octo-web itself returns 503 on the direct port).
       MARKET_API_URL: ${OCTO_MARKET_API_URL:-}
     ports:
       # Web SPA is reached through nginx (`/`, see octo.conf.template) by
@@ -1327,7 +1327,7 @@ services:
   #      created the DB and user, so the IF NOT EXISTS / IF EXISTS guards make
   #      re-execution a safe no-op.
   market-preflight:
-    image: ${OCTO_PREFLIGHT_IMAGE:-busybox:1.36}
+    image: mysql:8.0
     restart: "no"
     profiles: ["market"]
     depends_on:
@@ -1340,11 +1340,18 @@ services:
     command:
       - |
         set -eu
-        # Validate OCTO_MARKETPLACE_DB_PASSWORD
+        # Validate OCTO_MARKETPLACE_DB_PASSWORD — same rules as init-extra-dbs.sh:
+        # must be non-empty, match [A-Za-z0-9._-], and not be a CHANGE_ME placeholder.
         if [ -z "$$OCTO_MARKETPLACE_DB_PASSWORD" ]; then
           echo "[market-preflight] FATAL: OCTO_MARKETPLACE_DB_PASSWORD is empty — set it in .env (openssl rand -hex 16)" >&2
           exit 1
         fi
+        case "$$OCTO_MARKETPLACE_DB_PASSWORD" in
+          *[!A-Za-z0-9._-]*)
+            echo "[market-preflight] FATAL: OCTO_MARKETPLACE_DB_PASSWORD contains characters outside [A-Za-z0-9._-]" >&2
+            exit 1
+            ;;
+        esac
         lc=$$(printf %s "$$OCTO_MARKETPLACE_DB_PASSWORD" | tr 'A-Z' 'a-z')
         case "$$lc" in
           change_me_*|chg_me*)
@@ -1352,11 +1359,13 @@ services:
             exit 1
             ;;
         esac
-        # Idempotently provision DB + user (safe on both fresh and existing volumes)
+        # Idempotently provision DB + user (safe on both fresh and existing volumes).
+        # Uses $$ (runtime) not ${} (compose-parse-time) so the password is never
+        # baked into `docker compose config` output and no compose warning is emitted.
         MYSQL_PWD="$$MYSQL_ROOT_PASSWORD" mysql -h mysql -u root \
           -e "CREATE DATABASE IF NOT EXISTS octo_marketplace CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
-              CREATE USER IF NOT EXISTS 'marketplace'@'%' IDENTIFIED BY '${OCTO_MARKETPLACE_DB_PASSWORD}';
-              ALTER USER IF EXISTS 'marketplace'@'%' IDENTIFIED BY '${OCTO_MARKETPLACE_DB_PASSWORD}';
+              CREATE USER IF NOT EXISTS 'marketplace'@'%' IDENTIFIED BY '$$OCTO_MARKETPLACE_DB_PASSWORD';
+              ALTER USER IF EXISTS 'marketplace'@'%' IDENTIFIED BY '$$OCTO_MARKETPLACE_DB_PASSWORD';
               GRANT ALL PRIVILEGES ON octo_marketplace.* TO 'marketplace'@'%';
               FLUSH PRIVILEGES;"
         echo "[market-preflight] octo_marketplace database and user ready"
@@ -1371,7 +1380,7 @@ services:
   #
   # ISOLATION GUARANTEES:
   #   - No core service definition is touched beyond MARKET_API_URL on web
-  #     (empty by default; octo-web returns 503 gracefully when unset).
+  #     (empty by default; outer nginx returns 502 when container is absent).
   #   - Reuses the existing octo-net network, MySQL instance (octo_marketplace
   #     database created by init-extra-dbs.sh), and MinIO instance.
   #   - nginx routes /market/api/v1/ and /mcp-market are always present in
@@ -1421,7 +1430,9 @@ services:
       OSS_PATH_STYLE: "true"
       OSS_PUBLIC_ENDPOINT: "${OCTO_PUBLIC_BASE_URL:-http://${OCTO_DOMAIN:-localhost}:${OCTO_HTTP_PORT:-28080}}"
       OSS_PUBLIC_PATH_STYLE: "true"
-      OSS_DOWNLOAD_SIGNED: "false"
+      # Skill archives contain operator-uploaded code/config; keep downloads
+      # auth-gated via presigned URLs instead of world-readable anonymous access.
+      OSS_DOWNLOAD_SIGNED: "true"
       # MCP icon storage (same MinIO instance, same bucket)
       STORAGE_ENDPOINT: "http://minio:9000"
       STORAGE_BUCKET: octo-marketplace

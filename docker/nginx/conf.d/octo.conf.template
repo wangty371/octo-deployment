@@ -312,14 +312,16 @@ server {
     }
 
     # ---------------------------------------------------------------------------
-    # Marketplace: octo-marketplace REST API + SPA routes
+    # Marketplace: octo-marketplace REST API
     # ---------------------------------------------------------------------------
     # Variable proxy_pass + Docker DNS resolver defers DNS lookup to request
     # time so nginx starts cleanly even when the `market` profile is inactive
     # (returns 502 instead of crashing with "host not found in upstream").
+    # /mcp-market SPA routes are handled by the catch-all `location /` below
+    # (octo-web serves index.html for all unmatched paths via try_files), so
+    # no dedicated location is needed.
     location = /market/healthz {
         set $upstream_market_hc octo-marketplace;
-        resolver 127.0.0.11 ipv6=off valid=30s;
         proxy_pass         http://$upstream_market_hc:8092/healthz;
         proxy_http_version 1.1;
         proxy_set_header   Host $host;
@@ -331,7 +333,6 @@ server {
     location /market/api/v1/ {
         limit_req zone=octo_api burst=20 nodelay;
         set $upstream_market octo-marketplace;
-        resolver 127.0.0.11 ipv6=off valid=30s;
         rewrite ^/market/api/v1/(.*)$ /api/v1/$1 break;
         proxy_pass         http://$upstream_market:8092;
         proxy_http_version 1.1;
@@ -340,18 +341,6 @@ server {
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto $scheme;
         client_max_body_size 100m;
-    }
-
-    # SPA history-mode fallback for marketplace pages (/mcp-market, /mcp-market/*)
-    location /mcp-market {
-        set $upstream_web_market web;
-        rewrite ^ / break;
-        proxy_pass         http://$upstream_web_market;
-        proxy_http_version 1.1;
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
     }
 
     location = /_octo_up {
@@ -597,6 +586,30 @@ to reach it (<code>ssh -L 28088:127.0.0.1:28088 user@host</code>).</p>
 #     location = /_octo_up {
 #         default_type text/html;
 #         return 200 '<!doctype html><html><body><h1>OCTO Server (HTTPS)</h1></body></html>';
+#     }
+#
+#     # Marketplace — mirrors the HTTP block above.
+#     location = /market/healthz {
+#         set $upstream_market_hc octo-marketplace;
+#         proxy_pass         http://$upstream_market_hc:8092/healthz;
+#         proxy_http_version 1.1;
+#         proxy_set_header   Host $host;
+#         access_log off;
+#     }
+#     location = /market/api {
+#         return 301 /market/api/v1/;
+#     }
+#     location /market/api/v1/ {
+#         limit_req zone=octo_api burst=20 nodelay;
+#         set $upstream_market octo-marketplace;
+#         rewrite ^/market/api/v1/(.*)$ /api/v1/$1 break;
+#         proxy_pass         http://$upstream_market:8092;
+#         proxy_http_version 1.1;
+#         proxy_set_header   Host              $host;
+#         proxy_set_header   X-Real-IP         $remote_addr;
+#         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+#         proxy_set_header   X-Forwarded-Proto $scheme;
+#         client_max_body_size 100m;
 #     }
 #
 #     # MinIO S3 bucket-name routing — see the HTTP server block above

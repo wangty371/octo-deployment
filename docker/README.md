@@ -1334,6 +1334,88 @@ docker compose ps octo-docs-backend
 
 ---
 
+## Marketplace profile (Skill & MCP market)
+
+The marketplace backend — `octo-marketplace` — provides Skill archive
+upload/download and MCP server icon management, accessible through the
+octo-web sidebar "工具" (Tools) entry. It is **opt-in** behind the Docker
+Compose `market` profile:
+
+- A default `docker compose up -d` starts **zero** marketplace services.
+- Every marketplace variable in `.env` has an empty default, so a non-market
+  deployment never fails preflight on a missing marketplace variable.
+- nginx proxies `/market/api/v1/` to the marketplace container (variable
+  `proxy_pass`, so nginx starts cleanly when the profile is inactive).
+
+### Required settings
+
+Before adding `market` to `COMPOSE_PROFILES`, set the required variables in
+`docker/.env`:
+
+| Variable | Purpose | Generate with |
+|---|---|---|
+| `OCTO_MARKETPLACE_DB_PASSWORD` | MySQL scoped user for `octo_marketplace` | `openssl rand -hex 16` |
+| `OCTO_PUBLIC_BASE_URL` | Full browser-reachable origin (baked into presigned URLs) | e.g. `https://octo.example.com` or `http://192.168.1.10:28080` |
+| `OCTO_MARKET_API_URL` | Wires octo-web to the marketplace backend | `http://octo-marketplace:8092` |
+
+### Bring the marketplace profile up
+
+```bash
+# In docker/.env — set the required variables first:
+echo 'OCTO_MARKETPLACE_DB_PASSWORD='$(openssl rand -hex 16) >> .env
+echo 'OCTO_PUBLIC_BASE_URL=http://YOUR_HOST:28080' >> .env
+echo 'OCTO_MARKET_API_URL=http://octo-marketplace:8092' >> .env
+
+# Add "market" to COMPOSE_PROFILES:
+existing="$(grep -E '^COMPOSE_PROFILES=' .env | tail -1 | cut -d= -f2-)"
+if ! echo "$existing" | grep -qw "market"; then
+  [ -n "$existing" ] \
+    && sed -i "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=${existing},market|" .env \
+    || echo 'COMPOSE_PROFILES=market' >> .env
+fi
+
+docker compose up -d
+```
+
+`market-preflight` (a one-shot `mysql:8.0` service) validates the password,
+then idempotently creates `octo_marketplace` and the `marketplace` DB user
+before `octo-marketplace` starts. This covers both fresh installs and
+**existing deployments** where `init-extra-dbs.sh` has already run.
+
+### MinIO setup on an existing stack
+
+If `minio-init` already ran before you added the `market` profile, re-run it
+to create the `octo-marketplace` bucket:
+
+```bash
+docker compose up --force-recreate minio-init
+```
+
+### Skill archive download security
+
+Skill archives (`OSS_DOWNLOAD_SIGNED: "true"`) are served via short-lived
+presigned URLs — they are **not** publicly readable. Only authenticated users
+with appropriate roles can download archives through the marketplace API.
+
+> **HTTP plain-text note:** Skill upload uses MinIO presigned PUT URLs.
+> For **HTTPS deployments** this works out of the box. For **plain-HTTP LAN
+> deployments**, the octo-web frontend validates that the presigned URL
+> hostname matches the current page origin; a fix has been submitted to
+> octo-web (branch `fix/skill-market-http-same-origin`). Until that PR is
+> merged and a new octo-web image released, plain-HTTP operators will see a
+> "URL scheme 不允许" error on skill uploads.
+
+### Verify
+
+```bash
+curl http://127.0.0.1:28080/market/healthz
+# → {"status":"ok"}
+
+docker compose ps octo-marketplace
+```
+
+---
+
 ## Search profile (message-search pipeline)
 
 The message-search pipeline — Kafka + OpenSearch (with the `analysis-ik`
