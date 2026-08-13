@@ -1012,9 +1012,22 @@ OCTO_SEARCH_INDEXER_IMAGE=octo-search-indexer:local
 
 这一个镜像携带全部三个流水线二进制——`es-indexer`（长驻消费者，默认入口）、`backfill`（一次性历史加载器）、`reconcile`（正确性校验闸门）——所以下面的升级流程不需要单独的 Go 工具链或第二个镜像。
 
-> **镜像可用性（社区部署）。** 发布的 `mininglamposs/octo-search-indexer:latest` tag 只有在切过 release tag 后才存在，而带 IK 的 OpenSearch 镜像（`octo-search-opensearch-ik`）是从 `docker/opensearch/Dockerfile` 本地构建的（不推送到公共 registry）。对于从零开始的社区部署，请把两者都当作**前置依赖**：如上所示从 checkout 构建 indexer 镜像（或在有 `v*` tag 后固定到该 tag），并让 Compose 在首次 `up` 时构建 OpenSearch+IK 镜像（`--build`）。IK 插件在构建时从 `release.infinilabs.com` 下载，所以构建所在主机必须能访问该地址。
+> **镜像可用性（社区部署）。** 发布的 `mininglamposs/octo-search-indexer:latest` tag 只有在切过 release tag 后才存在。可在 `.env` 里把 `OCTO_SEARCH_INDEXER_IMAGE` 固定到已发布的 `v*` tag，或如上所示从 checkout 构建 indexer 镜像。
 
-带 IK 插件的 OpenSearch 镜像会在首次 `up` 时从 `docker/opensearch/Dockerfile` 自动构建（无需手动步骤）。
+`search-opensearch` 服务使用**预构建镜像**（`OCTO_SEARCH_OPENSEARCH_IMAGE`），已内置 analysis-ik 插件，默认无需本地 Docker build。
+
+> **⚠️ arm64 / Apple Silicon 主机：** 预构建镜像仅支持 `linux/amd64`。compose 文件中的 `platform: linux/amd64` 配置会让架构不匹配时立即报错，而不是静默拉取后在模拟环境下运行。arm64 主机**必须**使用下方的本地构建 override。
+
+如需本地构建镜像（arm64 主机必须；或需要固定不同插件版本时）：
+
+```bash
+docker compose \
+  -f docker-compose.yaml \
+  -f docker-compose.opensearch-build.yaml \
+  up -d --build search-opensearch search-kafka search-kafka-init es-indexer
+```
+
+> **注意：** 本地构建要求主机能访问 `release.infinilabs.com`（IK 插件在构建时下载），且允许 Docker build 容器内调用 `pthread_create`。seccomp 策略严格的主机会看到 `pthread_create failed (EPERM)` 报错——此类主机请使用默认预构建镜像（仅限 amd64）。
 
 ### 把 search profile 起起来
 
@@ -1022,7 +1035,7 @@ OCTO_SEARCH_INDEXER_IMAGE=octo-search-indexer:local
 cd docker
 # 为当前 shell 启用该 profile（或在 .env 里持久化 COMPOSE_PROFILES=search）
 export COMPOSE_PROFILES=search
-docker compose up -d --build search-opensearch search-kafka search-kafka-init es-indexer
+docker compose up -d search-opensearch search-kafka search-kafka-init es-indexer
 ```
 
 `search-kafka-init` 预建正文 + DLQ topic（`octo.message.v1`、`octo.message.v1.dlq`）——这是必需的，因为 indexer 的 DLQ producer 以 `AllowAutoTopicCreation=false` 运行。`es-indexer` 会等它加上一个 healthy 的 OpenSearch，然后用内嵌的 IK mapping 自动创建 `octo-message` 索引（索引侧 `ik_max_word`，查询侧 `ik_smart`）。
@@ -1089,7 +1102,7 @@ existing="$(grep -E '^COMPOSE_PROFILES=' .env | tail -1 | cut -d= -f2-)"
 export COMPOSE_PROFILES="${existing:+$existing,}search"
 
 # 1. 基础设施
-docker compose up -d --build search-opensearch search-kafka search-kafka-init es-indexer
+docker compose up -d search-opensearch search-kafka search-kafka-init es-indexer
 
 # 2. 把 cursor seed 到高水位  (G1)
 COMPOSE_PROFILES=search-tools docker compose run --rm search-cursor-seed

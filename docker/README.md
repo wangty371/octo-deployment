@@ -1451,8 +1451,14 @@ flow below needs no separate Go toolchain or second image.
 
 The `search-opensearch` service uses a **pre-built image** (`OCTO_SEARCH_OPENSEARCH_IMAGE`)
 that ships with the analysis-ik plugin already baked in — no local Docker build
-is needed by default. If you need to build the image locally (e.g. to pin a
-different plugin version), use the provided override file:
+is needed by default.
+
+> **⚠️ arm64 / Apple Silicon hosts:** the pre-built image is `linux/amd64` only.
+> `platform: linux/amd64` in the compose file makes any arch mismatch fail loudly
+> rather than silently pulling under emulation. arm64 hosts **must** use the
+> local-build override below instead of the default pull path.
+
+To build the image locally (required on arm64, or to pin a different plugin version):
 
 ```bash
 docker compose \
@@ -1464,7 +1470,7 @@ docker compose \
 > **Note:** local builds require the host to reach `release.infinilabs.com`
 > and allow `pthread_create` inside Docker build containers. Hosts with strict
 > seccomp policies will see a `pthread_create failed (EPERM)` error — use the
-> default pre-built image in that case.
+> default pre-built image in that case (amd64 only).
 
 ### Bring the search profile up
 
