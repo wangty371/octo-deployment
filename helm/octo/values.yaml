@@ -565,9 +565,8 @@ marketplace:
 # with kustomize/search, which is also infra-only).
 #
 # 🔴 PREREQUISITE before search.enabled=true is actually installable:
-#   - opensearch.image MUST be a registry image with analysis-ik baked in
-#     (build docker/opensearch/Dockerfile, push, set repository/tag below).
-#     The default name below is a LOCAL build name and will NOT pull as-is.
+#   - opensearch.image is a pre-built registry image with analysis-ik baked in.
+#     Override repository/tag if you need a different version or registry.
 #   - indexer.image is published only on v* tags; pin a real tag/digest for prod.
 #
 # NOTE (china overlay): the new search images (self-built opensearch-ik +
@@ -577,7 +576,7 @@ marketplace:
 search:
   enabled: false
   opensearch:
-    image: { repository: octo-search-opensearch-ik, tag: "2.17.0", pullPolicy: IfNotPresent }
+    image: { repository: tsh8-deepminer-tcr1.tencentcloudcr.com/octo-oss/octo-search-opensearch-ik, tag: "2.17.0", pullPolicy: IfNotPresent }
     javaOpts: "-Xms512m -Xmx512m"
     disableSecurityPlugin: true
     storage: { size: 20Gi, storageClass: "" }
