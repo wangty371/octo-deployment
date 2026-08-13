@@ -1520,11 +1520,13 @@ services:
     # Pre-built image with analysis-ik plugin baked in. Using a pre-built image
     # avoids a local Docker build step that fails on hosts with strict seccomp
     # policies (pthread_create EPERM during the JVM-backed plugin installer).
+    # Requires egress to tsh8-deepminer-tcr1.tencentcloudcr.com on first pull.
     #
     # ⚠️  This pre-built image is linux/amd64 only. arm64 / Apple Silicon hosts
     # must use the local-build override instead (see docker/README.md "Search
-    # profile"). `platform: linux/amd64` below makes any mismatch fail loudly
-    # rather than silently pulling an amd64 image and running it under emulation.
+    # profile"). `platform: linux/amd64` pins Compose to the correct platform
+    # descriptor so any mismatch surfaces as an exec-format error at container
+    # start rather than silently running an amd64 image under qemu emulation.
     #
     # To build locally (arm64 hosts or to pin a different plugin version):
     #   docker compose -f docker-compose.yaml -f docker-compose.opensearch-build.yaml \

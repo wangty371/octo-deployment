@@ -1014,9 +1014,9 @@ OCTO_SEARCH_INDEXER_IMAGE=octo-search-indexer:local
 
 > **镜像可用性（社区部署）。** 发布的 `mininglamposs/octo-search-indexer:latest` tag 只有在切过 release tag 后才存在。可在 `.env` 里把 `OCTO_SEARCH_INDEXER_IMAGE` 固定到已发布的 `v*` tag，或如上所示从 checkout 构建 indexer 镜像。
 
-`search-opensearch` 服务使用**预构建镜像**（`OCTO_SEARCH_OPENSEARCH_IMAGE`），已内置 analysis-ik 插件，默认无需本地 Docker build。
+`search-opensearch` 服务使用**预构建镜像**（`OCTO_SEARCH_OPENSEARCH_IMAGE`），已内置 analysis-ik 插件，默认无需本地 Docker build。首次 pull 时需要主机能访问 `tsh8-deepminer-tcr1.tencentcloudcr.com`。
 
-> **⚠️ arm64 / Apple Silicon 主机：** 预构建镜像仅支持 `linux/amd64`。compose 文件中的 `platform: linux/amd64` 配置会让架构不匹配时立即报错，而不是静默拉取后在模拟环境下运行。arm64 主机**必须**使用下方的本地构建 override。
+> **⚠️ arm64 / Apple Silicon 主机：** 预构建镜像仅支持 `linux/amd64`。compose 文件中的 `platform: linux/amd64` 配置将平台描述符固定为 amd64，使架构不匹配时在容器启动阶段以 `exec format error` 报错，而不是静默拉取后在 qemu 模拟环境下运行。arm64 主机**必须**使用下方的本地构建 override。
 
 如需本地构建镜像（arm64 主机必须；或需要固定不同插件版本时）：
 

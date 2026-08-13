@@ -1451,12 +1451,14 @@ flow below needs no separate Go toolchain or second image.
 
 The `search-opensearch` service uses a **pre-built image** (`OCTO_SEARCH_OPENSEARCH_IMAGE`)
 that ships with the analysis-ik plugin already baked in — no local Docker build
-is needed by default.
+is needed by default. The image is pulled from `tsh8-deepminer-tcr1.tencentcloudcr.com`
+on first use; ensure the host has egress to that registry.
 
 > **⚠️ arm64 / Apple Silicon hosts:** the pre-built image is `linux/amd64` only.
-> `platform: linux/amd64` in the compose file makes any arch mismatch fail loudly
-> rather than silently pulling under emulation. arm64 hosts **must** use the
-> local-build override below instead of the default pull path.
+> `platform: linux/amd64` in the compose file pins the platform descriptor so a
+> mismatch surfaces as an `exec format error` at container start rather than
+> silently running an amd64 image under qemu emulation. arm64 hosts **must** use
+> the local-build override below instead of the default pull path.
 
 To build the image locally (required on arm64, or to pin a different plugin version):
 
@@ -1467,10 +1469,12 @@ docker compose \
   up -d --build search-opensearch search-kafka search-kafka-init es-indexer
 ```
 
-> **Note:** local builds require the host to reach `release.infinilabs.com`
-> and allow `pthread_create` inside Docker build containers. Hosts with strict
-> seccomp policies will see a `pthread_create failed (EPERM)` error — use the
-> default pre-built image in that case (amd64 only).
+> **Note:** `--build` is only meaningful with the override file (the base
+> `docker-compose.yaml` has no `build:` block for this service). Local builds
+> also require the host to reach `release.infinilabs.com` and allow
+> `pthread_create` inside Docker build containers. Hosts with strict seccomp
+> policies will see a `pthread_create failed (EPERM)` error — use the default
+> pre-built image in that case (amd64 only).
 
 ### Bring the search profile up
 

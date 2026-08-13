@@ -131,7 +131,7 @@ step1_infra_up() {
   # infrastructure running (and so the search-tools jobs below resolve). Merges
   # into any existing COMPOSE_PROFILES (e.g. summary) rather than replacing it.
   persist_profile search
-  COMPOSE_PROFILES=search "${DC[@]}" up -d --build \
+  COMPOSE_PROFILES=search "${DC[@]}" up -d \
     search-opensearch search-kafka search-kafka-init es-indexer
   echo "Waiting for OpenSearch to report a non-red cluster status..."
   for _ in $(seq 1 40); do
