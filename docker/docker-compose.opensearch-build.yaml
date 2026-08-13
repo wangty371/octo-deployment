@@ -1,0 +1,30 @@
+# docker-compose.opensearch-build.yaml
+#
+# Optional override that re-adds the local build path for search-opensearch.
+# Use this when you need to bake in a specific analysis-ik plugin version or
+# cannot pull the pre-built image.
+#
+# Usage (combine with the main compose file):
+#
+#   docker compose \
+#     -f docker-compose.yaml \
+#     -f docker-compose.opensearch-build.yaml \
+#     up -d --build search-opensearch search-kafka search-kafka-init es-indexer
+#
+# Requirements:
+#   - The build host must be able to reach release.infinilabs.com (the IK
+#     plugin is downloaded at build time).
+#   - The host must allow pthread_create inside Docker build containers
+#     (strict seccomp policies block this with EPERM; if you see that error,
+#     use the default pre-built image instead of this override).
+#
+# Set OCTO_SEARCH_OPENSEARCH_VERSION in .env to pin a specific OpenSearch /
+# plugin version (default: 2.17.0).
+
+services:
+  search-opensearch:
+    build:
+      context: ./opensearch
+      dockerfile: Dockerfile
+      args:
+        OPENSEARCH_VERSION: ${OCTO_SEARCH_OPENSEARCH_VERSION:-2.17.0}

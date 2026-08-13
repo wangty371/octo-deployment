@@ -1446,17 +1446,25 @@ flow below needs no separate Go toolchain or second image.
 
 > **Image availability (community deployments).** The published
 > `mininglamposs/octo-search-indexer:latest` tag only exists once a release tag
-> has been cut, and the IK-enabled OpenSearch image
-> (`octo-search-opensearch-ik`) is built locally from
-> `docker/opensearch/Dockerfile` (it is not pushed to a public registry). For a
-> from-scratch community deployment, treat both as **prerequisites**: build the
-> indexer image from a checkout as shown above (or pin a published `v*` tag once
-> one exists), and let Compose build the OpenSearch+IK image on first `up`
-> (`--build`). The IK plugin download pulls from `release.infinilabs.com` at
-> build time, so that host must be reachable from wherever you build.
+> has been cut. Set `OCTO_SEARCH_INDEXER_IMAGE` in `.env` to a pinned `v*` tag
+> once one exists, or build the indexer image from a checkout as shown above.
 
-The OpenSearch image with the IK plugin is built automatically from
-`docker/opensearch/Dockerfile` on first `up` (no manual step).
+The `search-opensearch` service uses a **pre-built image** (`OCTO_SEARCH_OPENSEARCH_IMAGE`)
+that ships with the analysis-ik plugin already baked in — no local Docker build
+is needed by default. If you need to build the image locally (e.g. to pin a
+different plugin version), use the provided override file:
+
+```bash
+docker compose \
+  -f docker-compose.yaml \
+  -f docker-compose.opensearch-build.yaml \
+  up -d --build search-opensearch search-kafka search-kafka-init es-indexer
+```
+
+> **Note:** local builds require the host to reach `release.infinilabs.com`
+> and allow `pthread_create` inside Docker build containers. Hosts with strict
+> seccomp policies will see a `pthread_create failed (EPERM)` error — use the
+> default pre-built image in that case.
 
 ### Bring the search profile up
 
@@ -1464,7 +1472,7 @@ The OpenSearch image with the IK plugin is built automatically from
 cd docker
 # Enable the profile for this shell (or persist COMPOSE_PROFILES=search in .env)
 export COMPOSE_PROFILES=search
-docker compose up -d --build search-opensearch search-kafka search-kafka-init es-indexer
+docker compose up -d search-opensearch search-kafka search-kafka-init es-indexer
 ```
 
 `search-kafka-init` pre-creates the body + DLQ topics (`octo.message.v1`,
@@ -1577,7 +1585,7 @@ existing="$(grep -E '^COMPOSE_PROFILES=' .env | tail -1 | cut -d= -f2-)"
 export COMPOSE_PROFILES="${existing:+$existing,}search"
 
 # 1. infra
-docker compose up -d --build search-opensearch search-kafka search-kafka-init es-indexer
+docker compose up -d search-opensearch search-kafka search-kafka-init es-indexer
 
 # 2. seed cursor to high-watermark  (G1)
 COMPOSE_PROFILES=search-tools docker compose run --rm search-cursor-seed

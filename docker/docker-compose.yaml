@@ -1517,15 +1517,15 @@ services:
       - octo-net
 
   search-opensearch:
-    # Built locally to bake in the analysis-ik plugin (index uses ik_max_word /
-    # query uses ik_smart). The plugin version MUST match the OpenSearch
-    # version — both are pinned via the build arg below.
+    # Pre-built image with analysis-ik plugin baked in. Using a pre-built image
+    # avoids a local Docker build step that fails on hosts with strict seccomp
+    # policies (pthread_create EPERM during the JVM-backed plugin installer).
+    #
+    # To build locally instead (e.g. to pin a different plugin version), use the
+    # override file:
+    #   docker compose -f docker-compose.yaml -f docker-compose.opensearch-build.yaml \
+    #     up -d search-opensearch ...
     image: ${OCTO_SEARCH_OPENSEARCH_IMAGE:-tsh8-deepminer-tcr1.tencentcloudcr.com/octo-oss/octo-search-opensearch-ik:2.17.0}
-    build:
-      context: ./opensearch
-      dockerfile: Dockerfile
-      args:
-        OPENSEARCH_VERSION: ${OCTO_SEARCH_OPENSEARCH_VERSION:-2.17.0}
     restart: unless-stopped
     profiles: ["search"]
     environment:
