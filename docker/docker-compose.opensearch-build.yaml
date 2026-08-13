@@ -23,6 +23,9 @@
 
 services:
   search-opensearch:
+    # Override image tag to match the build version so the locally-built image
+    # is tagged correctly and Compose does not reuse a stale pre-built image.
+    image: octo-search-opensearch-ik:${OCTO_SEARCH_OPENSEARCH_VERSION:-2.17.0}
     build:
       context: ./opensearch
       dockerfile: Dockerfile
