@@ -1016,7 +1016,7 @@ OCTO_SEARCH_INDEXER_IMAGE=octo-search-indexer:local
 
 `search-opensearch` 服务使用**预构建镜像**（`OCTO_SEARCH_OPENSEARCH_IMAGE`），已内置 analysis-ik 插件，默认无需本地 Docker build。首次 pull 时需要主机能访问 `tsh8-deepminer-tcr1.tencentcloudcr.com`。
 
-> **⚠️ arm64 / Apple Silicon 主机：** 预构建镜像仅支持 `linux/amd64`。compose 文件中的 `platform: linux/amd64` 配置将平台描述符固定为 amd64，使架构不匹配时在容器启动阶段以 `exec format error` 报错，而不是静默拉取后在 qemu 模拟环境下运行。arm64 主机**必须**使用下方的本地构建 override。
+> **⚠️ arm64 / Apple Silicon 主机：** 预构建镜像仅支持 `linux/amd64`。arm64 主机拉取该镜像不会报错（单平台 manifest 的 pull 不会因架构不匹配而失败），但容器启动时会出现 `exec format error`，或在 qemu 模拟环境下运行——均不适合生产环境的 OpenSearch。arm64 主机**必须**使用下方的本地构建 override。
 
 如需本地构建镜像（arm64 主机必须；或需要固定不同插件版本时）：
 
@@ -1027,7 +1027,13 @@ docker compose \
   up -d --build search-opensearch search-kafka search-kafka-init es-indexer
 ```
 
-> **注意：** 本地构建要求主机能访问 `release.infinilabs.com`（IK 插件在构建时下载），且允许 Docker build 容器内调用 `pthread_create`。seccomp 策略严格的主机会看到 `pthread_create failed (EPERM)` 报错——此类主机请使用默认预构建镜像（仅限 amd64）。
+> **注意：** `--build` 仅在使用 override 文件时有效（base `docker-compose.yaml` 中该服务没有 `build:` 块）。本地构建还要求主机能访问 `release.infinilabs.com`（IK 插件在构建时下载），且允许 Docker build 容器内调用 `pthread_create`。seccomp 策略严格的主机会看到 `pthread_create failed (EPERM)` 报错——此类主机请使用默认预构建镜像（仅限 amd64）。
+
+如需让 `search-upgrade.sh` 和 `setup.sh` 也自动使用本地构建 override，在 `docker/.env` 中持久化 `COMPOSE_FILE`：
+
+```env
+COMPOSE_FILE=docker-compose.yaml:docker-compose.opensearch-build.yaml
+```
 
 ### 把 search profile 起起来
 

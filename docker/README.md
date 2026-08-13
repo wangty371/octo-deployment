@@ -1455,10 +1455,10 @@ is needed by default. The image is pulled from `tsh8-deepminer-tcr1.tencentcloud
 on first use; ensure the host has egress to that registry.
 
 > **⚠️ arm64 / Apple Silicon hosts:** the pre-built image is `linux/amd64` only.
-> `platform: linux/amd64` in the compose file pins the platform descriptor so a
-> mismatch surfaces as an `exec format error` at container start rather than
-> silently running an amd64 image under qemu emulation. arm64 hosts **must** use
-> the local-build override below instead of the default pull path.
+> On arm64, the amd64 image pulls successfully (single-platform manifests do not
+> error on a platform-scoped pull) but then either fails at container start with
+> `exec format error` or runs under qemu emulation — neither is suitable for a
+> production OpenSearch. arm64 hosts **must** use the local-build override below.
 
 To build the image locally (required on arm64, or to pin a different plugin version):
 
@@ -1475,6 +1475,13 @@ docker compose \
 > `pthread_create` inside Docker build containers. Hosts with strict seccomp
 > policies will see a `pthread_create failed (EPERM)` error — use the default
 > pre-built image in that case (amd64 only).
+
+To make `search-upgrade.sh` and `setup.sh` use the local-build override
+automatically, persist `COMPOSE_FILE` in `docker/.env`:
+
+```env
+COMPOSE_FILE=docker-compose.yaml:docker-compose.opensearch-build.yaml
+```
 
 ### Bring the search profile up
 

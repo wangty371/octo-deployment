@@ -1524,15 +1524,18 @@ services:
     #
     # ⚠️  This pre-built image is linux/amd64 only. arm64 / Apple Silicon hosts
     # must use the local-build override instead (see docker/README.md "Search
-    # profile"). `platform: linux/amd64` pins Compose to the correct platform
-    # descriptor so any mismatch surfaces as an exec-format error at container
-    # start rather than silently running an amd64 image under qemu emulation.
+    # profile"). On an arm64 host the amd64 image pulls successfully (single-
+    # platform manifests do not error on a platform-scoped pull) but then either
+    # fails at container start with exec format error or runs under emulation —
+    # use the override file to get a native arm64 build instead.
     #
     # To build locally (arm64 hosts or to pin a different plugin version):
     #   docker compose -f docker-compose.yaml -f docker-compose.opensearch-build.yaml \
     #     up -d --build search-opensearch ...
+    # To use the local-build override with the upgrade script or setup.sh, set
+    # COMPOSE_FILE in .env:
+    #   COMPOSE_FILE=docker-compose.yaml:docker-compose.opensearch-build.yaml
     image: ${OCTO_SEARCH_OPENSEARCH_IMAGE:-tsh8-deepminer-tcr1.tencentcloudcr.com/octo-oss/octo-search-opensearch-ik:2.17.0}
-    platform: linux/amd64
     restart: unless-stopped
     profiles: ["search"]
     environment:
