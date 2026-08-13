@@ -1520,7 +1520,7 @@ services:
     # Built locally to bake in the analysis-ik plugin (index uses ik_max_word /
     # query uses ik_smart). The plugin version MUST match the OpenSearch
     # version — both are pinned via the build arg below.
-    image: ${OCTO_SEARCH_OPENSEARCH_IMAGE:-octo-search-opensearch-ik:2.17.0}
+    image: ${OCTO_SEARCH_OPENSEARCH_IMAGE:-tsh8-deepminer-tcr1.tencentcloudcr.com/octo-oss/octo-search-opensearch-ik:2.17.0}
     build:
       context: ./opensearch
       dockerfile: Dockerfile
