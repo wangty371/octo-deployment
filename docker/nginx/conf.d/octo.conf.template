@@ -104,8 +104,45 @@ server {
         # Rate limit + small burst — same shape applied to /v1/. Keeps a
         # rogue client from exhausting octo-server while still passing
         # bursty page loads. zone= names are declared in nginx.conf.
+        #
+        # NOTE: /api/v1/docs* is intercepted BEFORE this block by the
+        # `location ^~ /api/v1/docs` rule below — see that block.
         limit_req zone=octo_api burst=60 nodelay;
         proxy_pass         http://octo_api/;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   Connection        "";
+        proxy_read_timeout 600s;
+    }
+
+    # Docs REST API (human sessions) — must precede the generic /api/ block
+    # so /api/v1/docs* routes to octo-docs-backend instead of octo-server.
+    # octo-web ≤ 1.12 calls /api/v1/docs directly; the ^~ prefix modifier
+    # ensures this rule wins over the longer /api/ match.
+    location ^~ /api/v1/docs {
+        limit_req zone=octo_api burst=30 nodelay;
+        set $upstream_docs octo-docs-backend;
+        proxy_pass         http://$upstream_docs:3000;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   Connection        "";
+        proxy_read_timeout 600s;
+    }
+
+    # Docs Bot API — octo-cli and OpenClaw call /v1/bot/docs/* with a bot
+    # token; must precede the generic /v1/ block so requests reach
+    # octo-docs-backend rather than octo-server (which has no /v1/bot/docs
+    # handler and would return 404).
+    location ^~ /v1/bot/docs {
+        limit_req zone=octo_api burst=30 nodelay;
+        set $upstream_docs octo-docs-backend;
+        proxy_pass         http://$upstream_docs:3000;
         proxy_http_version 1.1;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
@@ -333,7 +370,26 @@ server {
         proxy_send_timeout 86400s;
     }
 
-    location = /_octo_up {
+    # /docs-ws without trailing slash — browsers connect to exactly this
+    # path; the /docs-ws/ block above does not match it, so without this
+    # rule the WebSocket upgrade falls through to the SPA catch-all and
+    # returns 200 HTML instead of 101 Switching Protocols. The result is
+    # that every document stays in "document_not_connected" state and PDF
+    # exports fail. This exact-match rule forwards bare /docs-ws to
+    # Hocuspocus the same way /docs-ws/ does.
+    location = /docs-ws {
+        set $upstream_docs_ws octo-docs-backend;
+        proxy_pass         http://$upstream_docs_ws:1234/;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade    $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
         default_type text/html;
         return 200 '<!doctype html>
 <html><head><meta charset="utf-8"><title>OCTO Server</title>

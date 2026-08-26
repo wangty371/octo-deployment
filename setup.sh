@@ -32,6 +32,7 @@ EXTERNAL_IP=""
 ENABLE_HTTPS=false
 ENABLE_SUMMARY=false
 ENABLE_SEARCH=false
+ENABLE_DOCS=false
 NON_INTERACTIVE=false
 FORCE_OVERWRITE=false
 RUN_UP=false
@@ -820,6 +821,7 @@ while [[ $# -gt 0 ]]; do
     --https)    ENABLE_HTTPS=true;   HTTPS_SET_VIA_CLI=true;   shift ;;
     --summary)  ENABLE_SUMMARY=true; SUMMARY_SET_VIA_CLI=true; shift ;;
     --search)   ENABLE_SEARCH=true;  SEARCH_SET_VIA_CLI=true;  shift ;;
+    --docs)     ENABLE_DOCS=true;    DOCS_SET_VIA_CLI=true;    shift ;;
     --up)         RUN_UP=true; shift ;;
     --smoke-test) RUN_VERIFY=true; shift ;;
     # `--verify` is the original spelling, retained as a deprecated alias
@@ -859,6 +861,11 @@ Generation:
                       run `cd docker && scripts/search-upgrade.sh` after
                       the stack is up (see docker/README.md "Search
                       profile" / "Turn search on").
+  --docs              Enable the collaborative document backend
+                      (COMPOSE_PROFILES=docs): octo-docs-backend (Hocuspocus
+                      + Yjs real-time sync). All required secrets are
+                      generated automatically. Can be combined with other
+                      profiles, e.g. --summary --docs.
   --up                START-ONLY subcommand (peer of --smoke-test /
                       --uninstall): requires an existing docker/.env and
                       runs `docker compose up -d --wait --wait-timeout
@@ -1967,6 +1974,13 @@ if [[ "${NON_INTERACTIVE}" == "false" ]]; then
     [yY]|[yY][eE][sS]) ENABLE_SEARCH=true ;;
     *) ENABLE_SEARCH=false ;;
   esac
+
+  # Docs (collaborative document backend)
+  read -rp "Enable collaborative document backend (octo-docs-backend)? [y/N]: " user_docs
+  case "${user_docs}" in
+    [yY]|[yY][eE][sS]) ENABLE_DOCS=true ;;
+    *) ENABLE_DOCS=false ;;
+  esac
 else
   # Non-interactive: auto-detect IP if not provided via --ip
   if [[ -z "${EXTERNAL_IP}" ]]; then
@@ -1980,6 +1994,7 @@ info "External IP: ${EXTERNAL_IP}"
 info "HTTPS:      ${ENABLE_HTTPS}"
 info "Summary:    ${ENABLE_SUMMARY}"
 info "Search:     ${ENABLE_SEARCH}"
+info "Docs:       ${ENABLE_DOCS}"
 
 # ── Generate secrets ────────────────────────────────────────────────────────
 info "Generating random secrets…"
@@ -2058,6 +2073,31 @@ sed_inplace "s|^# *OCTO_ADMIN_PWD=.*|OCTO_ADMIN_PWD=${OCTO_ADMIN_PWD}|" "${ENV_O
 # Optional compose profiles (merge, not clobber — summary + search coexist).
 if [[ "${ENABLE_SUMMARY}" == "true" ]]; then add_compose_profile summary; fi
 if [[ "${ENABLE_SEARCH}"  == "true" ]]; then add_compose_profile search;  fi
+if [[ "${ENABLE_DOCS}"    == "true" ]]; then
+  add_compose_profile docs
+  # Generate docs secrets and write them into .env.
+  OCTO_DOCS_DB_PASSWORD="$(openssl rand -hex 16)"
+  OCTO_DOCS_COLLAB_SECRET="$(openssl rand -hex 32)"
+  OCTO_DOCS_ATTACHMENT_SECRET="$(openssl rand -hex 32)"
+  OCTO_DOCS_NOTIFY_TOKEN="$(openssl rand -hex 32)"
+  sed_inplace "s|^# *OCTO_DOCS_DB_PASSWORD=.*|OCTO_DOCS_DB_PASSWORD=${OCTO_DOCS_DB_PASSWORD}|" "${ENV_OUT}"
+  sed_inplace "s|^# *OCTO_DOCS_COLLAB_SECRET=.*|OCTO_DOCS_COLLAB_SECRET=${OCTO_DOCS_COLLAB_SECRET}|" "${ENV_OUT}"
+  sed_inplace "s|^# *OCTO_DOCS_ATTACHMENT_SECRET=.*|OCTO_DOCS_ATTACHMENT_SECRET=${OCTO_DOCS_ATTACHMENT_SECRET}|" "${ENV_OUT}"
+  sed_inplace "s|^# *OCTO_DOCS_NOTIFY_TOKEN=.*|OCTO_DOCS_NOTIFY_TOKEN=${OCTO_DOCS_NOTIFY_TOKEN}|" "${ENV_OUT}"
+  # Derive the docs-specific URLs from the stack's public address.
+  local_scheme="http"
+  [[ "${ENABLE_HTTPS}" == "true" ]] && local_scheme="wss" || local_scheme="ws"
+  OCTO_DOCS_COLLAB_WS_URL="${local_scheme}://${DOMAIN}:${OCTO_HTTP_PORT:-28080}/docs-ws/"
+  [[ "${ENABLE_HTTPS}" == "true" ]] && \
+    OCTO_DOCS_S3_ENDPOINT="https://${DOMAIN}" || \
+    OCTO_DOCS_S3_ENDPOINT="http://${DOMAIN}:${OCTO_HTTP_PORT:-28080}"
+  OCTO_DOCS_WEB_ORIGIN="${OCTO_DOCS_S3_ENDPOINT}"
+  OCTO_DOCS_CORS_ORIGINS="${OCTO_DOCS_S3_ENDPOINT}"
+  sed_inplace "s|^# *OCTO_DOCS_COLLAB_WS_URL=.*|OCTO_DOCS_COLLAB_WS_URL=${OCTO_DOCS_COLLAB_WS_URL}|" "${ENV_OUT}"
+  sed_inplace "s|^# *OCTO_DOCS_S3_ENDPOINT=.*|OCTO_DOCS_S3_ENDPOINT=${OCTO_DOCS_S3_ENDPOINT}|" "${ENV_OUT}"
+  sed_inplace "s|^# *OCTO_DOCS_WEB_ORIGIN=.*|OCTO_DOCS_WEB_ORIGIN=${OCTO_DOCS_WEB_ORIGIN}|" "${ENV_OUT}"
+  sed_inplace "s|^# *OCTO_DOCS_CORS_ORIGINS=.*|OCTO_DOCS_CORS_ORIGINS=${OCTO_DOCS_CORS_ORIGINS}|" "${ENV_OUT}"
+fi
 
 # ── Persist COMPOSE_PROJECT_NAME into .env ─────────────────────────────────
 # INCIDENT-2026-05-16-001 follow-up: the interactive preflight may
@@ -2262,6 +2302,11 @@ if [[ "${ENABLE_SEARCH}" == "true" ]]; then
   info "onto OpenSearch, run the zero-downtime upgrade after the stack is up:"
   info "  cd docker && scripts/search-upgrade.sh"
   info "See docker/README.md \"Search profile\" / \"Turn search on\"."
+fi
+
+if [[ "${ENABLE_DOCS}" == "true" ]]; then
+  info "Docs profile enabled. octo-docs-backend (Hocuspocus + Yjs) will start"
+  info "with the stack. All required secrets have been generated into docker/.env."
 fi
 
 # R6 (YUJ-1020): we are always on the generation path here (--up exits

@@ -1403,6 +1403,13 @@ services:
       ATTACHMENT_S3_SECRET_KEY: ${OCTO_MINIO_APP_PASSWORD:-}
       ATTACHMENT_S3_FORCE_PATH_STYLE: "true"
       ATTACHMENT_SIGNING_SECRET: ${OCTO_DOCS_ATTACHMENT_SECRET:-}
+      # Internal MinIO endpoint for server-side operations (schema migrations,
+      # export PDF image download). Must be the container-network address so
+      # docs-backend can reach MinIO directly without going through nginx.
+      # Without this, PDF exports lose embedded images because docs-backend
+      # tries to download them via the public ATTACHMENT_S3_ENDPOINT URL which
+      # is unreachable from inside the Docker network.
+      ATTACHMENT_S3_INTERNAL_ENDPOINT: "http://minio:9000"
       # CORS — allow requests from the web frontend
       CORS_ALLOWED_ORIGINS: "${OCTO_DOCS_CORS_ORIGINS:-}"
       TZ: ${TZ:-UTC}
