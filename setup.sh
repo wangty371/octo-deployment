@@ -54,6 +54,7 @@ IP_SET_VIA_CLI=false
 HTTPS_SET_VIA_CLI=false
 SUMMARY_SET_VIA_CLI=false
 SEARCH_SET_VIA_CLI=false
+DOCS_SET_VIA_CLI=false
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_EXAMPLE="${SCRIPT_DIR}/docker/.env.example"
@@ -1576,7 +1577,8 @@ if [[ "${NON_INTERACTIVE}" == "false" ]]; then
      || "${IP_SET_VIA_CLI}" == "true" \
      || "${HTTPS_SET_VIA_CLI}" == "true" \
      || "${SUMMARY_SET_VIA_CLI}" == "true" \
-     || "${SEARCH_SET_VIA_CLI}" == "true" ]]; then
+     || "${SEARCH_SET_VIA_CLI}" == "true" \
+     || "${DOCS_SET_VIA_CLI}" == "true" ]]; then
     info "CLI flags supplied; switching to non-interactive mode."
     info "(Pass no flags, or only --force, to get the interactive prompts.)"
     NON_INTERACTIVE=true
@@ -1976,11 +1978,13 @@ if [[ "${NON_INTERACTIVE}" == "false" ]]; then
   esac
 
   # Docs (collaborative document backend)
-  read -rp "Enable collaborative document backend (octo-docs-backend)? [y/N]: " user_docs
-  case "${user_docs}" in
-    [yY]|[yY][eE][sS]) ENABLE_DOCS=true ;;
-    *) ENABLE_DOCS=false ;;
-  esac
+  if [[ "${DOCS_SET_VIA_CLI}" != "true" ]]; then
+    read -rp "Enable collaborative document backend (octo-docs-backend)? [y/N]: " user_docs
+    case "${user_docs}" in
+      [yY]|[yY][eE][sS]) ENABLE_DOCS=true ;;
+      *) ENABLE_DOCS=false ;;
+    esac
+  fi
 else
   # Non-interactive: auto-detect IP if not provided via --ip
   if [[ -z "${EXTERNAL_IP}" ]]; then
@@ -2084,15 +2088,31 @@ if [[ "${ENABLE_DOCS}"    == "true" ]]; then
   sed_inplace "s|^# *OCTO_DOCS_COLLAB_SECRET=.*|OCTO_DOCS_COLLAB_SECRET=${OCTO_DOCS_COLLAB_SECRET}|" "${ENV_OUT}"
   sed_inplace "s|^# *OCTO_DOCS_ATTACHMENT_SECRET=.*|OCTO_DOCS_ATTACHMENT_SECRET=${OCTO_DOCS_ATTACHMENT_SECRET}|" "${ENV_OUT}"
   sed_inplace "s|^# *OCTO_DOCS_NOTIFY_TOKEN=.*|OCTO_DOCS_NOTIFY_TOKEN=${OCTO_DOCS_NOTIFY_TOKEN}|" "${ENV_OUT}"
-  # Derive the docs-specific URLs from the stack's public address.
-  local_scheme="http"
-  [[ "${ENABLE_HTTPS}" == "true" ]] && local_scheme="wss" || local_scheme="ws"
-  OCTO_DOCS_COLLAB_WS_URL="${local_scheme}://${DOMAIN}:${OCTO_HTTP_PORT:-28080}/docs-ws/"
+  # Derive the docs-specific public URLs. Mirror the S1 rule (GH#41/GH#49):
+  # when OCTO_DOMAIN is a placeholder AND a non-loopback --ip was supplied,
+  # use EXTERNAL_IP so remote browsers get a reachable address instead of
+  # localhost. When a real domain is set (or HTTPS is enabled), derive from
+  # the domain directly. This must be consistent with the S1 block below
+  # which materialises MINIO_SERVER_URL / TS_EXTERNAL_BASEURL the same way.
+  if is_placeholder_domain && [[ -n "${EXTERNAL_IP}" ]] && ! is_loopback_ip "${EXTERNAL_IP}"; then
+    _docs_host="${EXTERNAL_IP}"
+    _docs_base_url="http://${EXTERNAL_IP}:${HTTP_PORT}"
+    _docs_ws_scheme="ws"
+  elif [[ "${ENABLE_HTTPS}" == "true" ]]; then
+    _docs_host="${DOMAIN}"
+    _docs_base_url="https://${DOMAIN}"
+    _docs_ws_scheme="wss"
+  else
+    _docs_host="${DOMAIN}"
+    _docs_base_url="http://${DOMAIN}:${HTTP_PORT}"
+    _docs_ws_scheme="ws"
+  fi
+  OCTO_DOCS_COLLAB_WS_URL="${_docs_ws_scheme}://${_docs_host}:${HTTP_PORT}/docs-ws/"
   [[ "${ENABLE_HTTPS}" == "true" ]] && \
-    OCTO_DOCS_S3_ENDPOINT="https://${DOMAIN}" || \
-    OCTO_DOCS_S3_ENDPOINT="http://${DOMAIN}:${OCTO_HTTP_PORT:-28080}"
-  OCTO_DOCS_WEB_ORIGIN="${OCTO_DOCS_S3_ENDPOINT}"
-  OCTO_DOCS_CORS_ORIGINS="${OCTO_DOCS_S3_ENDPOINT}"
+    OCTO_DOCS_COLLAB_WS_URL="${_docs_ws_scheme}://${_docs_host}/docs-ws/"
+  OCTO_DOCS_S3_ENDPOINT="${_docs_base_url}"
+  OCTO_DOCS_WEB_ORIGIN="${_docs_base_url}"
+  OCTO_DOCS_CORS_ORIGINS="${_docs_base_url}"
   sed_inplace "s|^# *OCTO_DOCS_COLLAB_WS_URL=.*|OCTO_DOCS_COLLAB_WS_URL=${OCTO_DOCS_COLLAB_WS_URL}|" "${ENV_OUT}"
   sed_inplace "s|^# *OCTO_DOCS_S3_ENDPOINT=.*|OCTO_DOCS_S3_ENDPOINT=${OCTO_DOCS_S3_ENDPOINT}|" "${ENV_OUT}"
   sed_inplace "s|^# *OCTO_DOCS_WEB_ORIGIN=.*|OCTO_DOCS_WEB_ORIGIN=${OCTO_DOCS_WEB_ORIGIN}|" "${ENV_OUT}"

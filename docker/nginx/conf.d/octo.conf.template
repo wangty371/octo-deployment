@@ -390,6 +390,8 @@ server {
         proxy_read_timeout 86400s;
         proxy_send_timeout 86400s;
     }
+
+    location = /_octo_up {
         default_type text/html;
         return 200 '<!doctype html>
 <html><head><meta charset="utf-8"><title>OCTO Server</title>

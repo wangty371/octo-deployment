@@ -1350,7 +1350,7 @@ services:
       - octo-net
 
   octo-docs-backend:
-    image: ${OCTO_DOCS_IMAGE:-mininglamposs/octo-docs-backend:0.4.0}
+    image: ${OCTO_DOCS_IMAGE:-mininglamposs/octo-docs-backend:0.6.0}
     restart: unless-stopped
     profiles: ["docs"]
     depends_on:
@@ -1368,8 +1368,9 @@ services:
     #   2. Incremental upgrades — runs dist/db/migrate.js (advisory lock +
     #      schema_migrations ledger; idempotent on every restart)
     #   3. exec the API server — replaces shell so SIGTERM reaches Node directly
-    # MINIMUM IMAGE VERSION: >= 0.3.0 (ships dist/db/migrate.js + upgrades/).
-    # Default tag is pinned to 0.4.0; override with OCTO_DOCS_IMAGE.
+    # MINIMUM IMAGE VERSION: >= 0.6.0 (ships ATTACHMENT_S3_INTERNAL_ENDPOINT
+    # support for server-side MinIO access; required for PDF export to preserve
+    # embedded images). Default tag is pinned to 0.6.0; override with OCTO_DOCS_IMAGE.
     environment:
       NODE_ENV: production
       HTTP_PORT: "3000"
